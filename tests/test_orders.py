@@ -1,5 +1,51 @@
 import pytest
 from campusgo.orders import order_total, Order
+from unittest.mock import Mock
+from campusgo.orders import Wallet
+
+def test_cancelling_unpaid_order_succeeds_and_notifies_tenant():
+    order = Order(id="ORD-T004", owner="U-01", total=25000)
+
+    result = order.cancel(by="U-01")
+
+    assert result.rejected is False
+    assert order.status == "CANCELLED"
+    assert order.tenant_notifications == ["cancelled"]
+
+def test_rejected_payment_leaves_balance_unchanged():
+    provider = Mock()
+    provider.charge.return_value = {"status": "REJECTED"}
+    wallet = Wallet(balance=30000, provider=provider)
+
+    result = wallet.pay(25000)
+
+    assert result.success is False
+    assert wallet.balance == 30000
+    provider.charge.assert_called_once_with(25000)
+
+
+def test_accepted_payment_with_sufficient_balance_reduces_balance_to_zero():
+    provider = Mock()
+    provider.charge.return_value = {"status": "ACCEPTED"}
+    wallet = Wallet(balance=25000, provider=provider)
+
+    result = wallet.pay(25000)
+
+    assert result.success is True
+    assert wallet.balance == 0
+    provider.charge.assert_called_once_with(25000)
+
+
+def test_accepted_status_with_insufficient_balance_is_not_charged():
+    provider = Mock()
+    provider.charge.return_value = {"status": "ACCEPTED"}
+    wallet = Wallet(balance=24000, provider=provider)
+
+    result = wallet.pay(25000)
+
+    assert result.success is False
+    assert wallet.balance == 24000
+    provider.charge.assert_not_called()
 
 def test_ten_percent_discount_at_subtotal_50000():
     # Arrange
